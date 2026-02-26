@@ -11,6 +11,7 @@ import pairRouter from "./pair.js";
 
 const app = express();
 
+// ✅ fix listeners limit
 events.EventEmitter.defaultMaxListeners = 500;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -18,32 +19,30 @@ const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 8000;
 
-// ✅ MONGO_URL env variable එකෙන් ගනී — Railway variable set කරන්න
-const MONGO_URL = process.env.MONGO_URL;
+const MONGO_URL =
+  process.env.MONGO_URL ||
+  "mongodb+srv://oshadhaoshadha40_db_user:x4KhJttGWgB1Pn7Y@cluster0.aaey0qe.mongodb.net/?appName=Cluster0";
 
-if (!MONGO_URL) {
-    console.error("❌ MONGO_URL environment variable is not set!");
-    process.exit(1);
-}
-
+// 🔥 MongoDB connect
 mongoose
-    .connect(MONGO_URL)
-    .then(() => console.log("✅ MongoDB Connected"))
-    .catch((err) => console.error("MongoDB Error:", err));
+  .connect(MONGO_URL)
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch((err) => console.error("MongoDB Error:", err));
 
+// ✅ Session middleware
 app.use(
-    session({
-        secret: process.env.SESSION_SECRET || "my-secret-key",
-        resave: false,
-        saveUninitialized: false,
-        store: MongoStore.create({
-            mongoUrl: MONGO_URL,
-            collectionName: "sessions",
-        }),
-        cookie: {
-            maxAge: 1000 * 60 * 60 * 24,
-        },
-    })
+  session({
+    secret: "my-secret-key",
+    resave: false,
+    saveUninitialized: false,
+    store: MongoStore.create({
+      mongoUrl: MONGO_URL,
+      collectionName: "sessions",
+    }),
+    cookie: {
+      maxAge: 1000 * 60 * 60 * 24, // 1 day
+    },
+  })
 );
 
 app.use(bodyParser.json());
@@ -51,13 +50,13 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(__dirname));
 
 app.get("/", (req, res) => {
-    res.sendFile(path.join(__dirname, "pair.html"));
+  res.sendFile(path.join(__dirname, "pair.html"));
 });
 
 app.use("/pair", pairRouter);
 
 app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
 
 export default app;
