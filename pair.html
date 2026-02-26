@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OSHIYA-MD SESSION</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"/>
+<style>
+:root {
+  --primary-color: #4a00e0;
+  --secondary-color: #fff;
+  --accent-color: #222;
+  --text-color: #fff;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  font-family:"Inter",sans-serif;
+  min-height:100vh;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  background: linear-gradient(270deg, #ff0000, #00ff00, #0000ff);
+  background-size: 600% 600%;
+  animation: gradientBG 20s ease infinite;
+  color: var(--text-color);
+  padding:15px;
+}
+
+@keyframes gradientBG{
+  0%{background-position:0% 50%}
+  50%{background-position:100% 50%}
+  100%{background-position:0% 50%}
+}
+
+.container{
+  width:100%; max-width:420px;
+  background:rgba(0,0,0,0.7);
+  border-radius:20px;
+  padding:25px;
+  box-shadow:0 0 20px rgba(0,0,0,0.5);
+  text-align:center;
+}
+
+.preview-image{
+  width:100px; height:100px;
+  margin:0 auto 16px;
+  border-radius:16px;
+  overflow:hidden;
+  box-shadow:0 4px 12px rgba(0,0,0,0.5);
+}
+.preview-image img{
+  width:100%; height:100%; object-fit:cover;
+}
+
+.title{font-size:24px; font-weight:700; margin-bottom:8px;}
+.subtitle{font-size:14px; margin-bottom:20px;}
+
+.toggle-container{display:flex; justify-content:center; gap:10px; margin-bottom:20px;}
+.toggle-option{
+  flex:1;
+  padding:12px;
+  font-weight:600;
+  border-radius:12px;
+  cursor:pointer;
+  background:#111;
+  border:2px solid #fff;
+  color:#fff;
+  position:relative;
+  overflow:hidden;
+}
+.toggle-option.active::before{
+  content:""; position:absolute; top:0; left:0; width:100%; height:100%;
+  background: linear-gradient(90deg, red, orange, yellow, green, cyan, blue, violet, red);
+  animation: rgbMove 3s linear infinite;
+  z-index:0; opacity:0.6;
+}
+@keyframes rgbMove{
+  0%{background-position:0% 50%}
+  100%{background-position:100% 50%}
+}
+.toggle-option span{position:relative; z-index:1;}
+.toggle-option.active{color:#fff; background:#111;}
+
+.input-group{margin-bottom:20px;}
+.input-field{width:100%;padding:12px;border-radius:12px;border:none;font-size:15px;}
+
+.generate-btn{
+  width:100%; padding:12px; border:none; border-radius:12px;
+  font-weight:600; font-size:15px; cursor:pointer; display:flex;
+  align-items:center; justify-content:center; gap:8px;
+  background:#111; color:#fff; margin-bottom:16px;
+  position:relative; overflow:hidden;
+}
+.generate-btn::before{
+  content:""; position:absolute; top:0; left:0; width:100%; height:100%;
+  background: linear-gradient(90deg, red, orange, yellow, green, cyan, blue, violet, red);
+  animation: rgbMove 3s linear infinite;
+  z-index:0; opacity:0.3;
+}
+.generate-btn span{position:relative; z-index:1;}
+.generate-btn:hover{transform:translateY(-1px);}
+
+.code-display{
+  background:rgba(255,255,255,0.1);
+  padding:12px;
+  border-radius:12px;
+  text-align:center;
+  font-size:16px;
+  font-weight:600;
+  margin-bottom:16px;
+  min-height:45px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+.qr-display{
+  background:rgba(255,255,255,0.1);
+  padding:20px;
+  border-radius:12px;
+  text-align:center;
+  margin-bottom:16px;
+  display:none;
+}
+.qr-image{max-width:260px; border-radius:12px; margin-bottom:12px;}
+.qr-instructions{font-size:13px;}
+
+.loading{display:none; text-align:center; margin:16px 0;}
+.loading i{font-size:24px; animation:spin 1s linear infinite;}
+@keyframes spin{0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);}}
+
+.footer{font-size:12px; color:#fff;}
+
+.music-btn{
+  position:fixed;
+  bottom:20px;
+  right:20px;
+  width:50px;
+  height:50px;
+  background:rgba(0,0,0,0.6);
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  box-shadow:0 0 10px #fff;
+}
+.music-btn:hover{box-shadow:0 0 20px #fff; transform:scale(1.1);}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="preview-image">
+      <img src="https://raw.githubusercontent.com/oshadha12345/images/refs/heads/main/20251222_040815.jpg" alt="Preview">
+    </div>
+    <h1 class="title">🍁OSHIYA-MD🍁</h1>
+    <p class="subtitle">❤️‍🔥Link your WhatsApp device❤️‍🔥</p>
+  </div>
+
+  <!-- RGB Buttons -->
+  <div class="toggle-container">
+    <div class="toggle-option active" data-mode="pair"><span><i class="fas fa-key"></i> Pair Code</span></div>
+    <div class="toggle-option" data-mode="qr"><span><i class="fas fa-qrcode"></i> Pair QR</span></div>
+  </div>
+
+  <!-- Input -->
+  <div class="input-group" id="inputGroup">
+    <input type="text" id="mobileNumber" class="input-field" placeholder="94756xxxxxxx">
+  </div>
+
+  <button class="generate-btn" id="submit"><span><i class="fas fa-key"></i> Generate Pair Code</span></button>
+
+  <div class="loading" id="loading"><i class="fas fa-spinner"></i></div>
+
+  <div class="code-display" id="codeDisplay" title="Click to copy">Your pair code will appear here</div>
+
+  <div class="qr-display" id="qrDisplay">
+    <img id="qrImage" class="qr-image" src="" alt="QR Code"/>
+    <div class="qr-instructions" id="qrInstructions"></div>
+  </div>
+
+  <div class="footer">© 2025 OSHIYA-MD🍁</div>
+</div>
+
+<!-- Music Button -->
+<div class="music-btn" id="musicBtn"><i class="fas fa-music"></i></div>
+<audio id="bgMusic" src="https://github.com/oshadha12345/images/raw/refs/heads/main/Voice/Voce%20na%20mira%20(slowed_tiktok%20vers.)%20-%20hwungii_%20dj%20vjk1%20%5Bedit%20audio%5D(MP3_160K).mp3"></audio>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/axios/1.0.0-alpha.1/axios.min.js"></script>
+<script>
+let currentMode = "pair";
+const pairBtn = document.querySelector('.toggle-option[data-mode="pair"]');
+const qrBtn = document.querySelector('.toggle-option[data-mode="qr"]');
+
+pairBtn.addEventListener("click", ()=>switchMode("pair"));
+qrBtn.addEventListener("click", ()=>switchMode("qr"));
+
+function switchMode(mode){
+  if(mode===currentMode) return;
+  currentMode=mode;
+  pairBtn.classList.toggle('active', mode==='pair');
+  qrBtn.classList.toggle('active', mode==='qr');
+
+  const submitBtn = document.getElementById("submit");
+  const inputGroup = document.getElementById("inputGroup");
+  const codeDisplay = document.getElementById("codeDisplay");
+  const qrDisplay = document.getElementById("qrDisplay");
+
+  if(mode==="pair"){
+    submitBtn.style.display="flex";
+    inputGroup.style.display="block";
+    codeDisplay.style.display="flex";
+    qrDisplay.style.display="none";
+  }else{
+    submitBtn.style.display="none";
+    inputGroup.style.display="none";
+    generateQRCode();
+  }
+  codeDisplay.innerHTML="Your pair code will appear here";
+}
+
+// Generate Pair Code
+document.getElementById("submit").addEventListener("click", async()=>{
+  const mobileNumber = document.getElementById("mobileNumber").value.trim();
+  const codeDisplay = document.getElementById("codeDisplay");
+  const qrDisplay = document.getElementById("qrDisplay");
+  const loading = document.getElementById("loading");
+
+  if(!mobileNumber){ codeDisplay.innerHTML='Enter number'; return; }
+
+  loading.style.display="block"; codeDisplay.innerHTML=""; qrDisplay.style.display="none";
+
+  try{
+    const res = await axios(`/pair?number=${mobileNumber.replace(/[^0-9]/g,"")}`);
+    const code = res.data.code || "Service Unavailable";
+    codeDisplay.innerHTML = code==="Service Unavailable" ? 'Service Unavailable' : `CODE: ${code}`;
+  }catch(err){
+    codeDisplay.innerHTML='Error generating code';
+  }finally{ loading.style.display="none"; }
+});
+
+// Copy code
+document.getElementById("codeDisplay").addEventListener("click", function(){
+  const text=this.innerText.replace("CODE: ","");
+  navigator.clipboard.writeText(text).then(()=>{
+    const orig=this.innerHTML;
+    this.innerHTML='<i class="fas fa-check"></i> Copied!';
+    setTimeout(()=>{ this.innerHTML=orig; },2000);
+  });
+});
+
+// Generate QR
+async function generateQRCode(){
+  const loading=document.getElementById("loading");
+  const codeDisplay=document.getElementById("codeDisplay");
+  const qrDisplay=document.getElementById("qrDisplay");
+  loading.style.display="block"; codeDisplay.innerHTML=""; qrDisplay.style.display="none";
+
+  try{
+    const res = await axios("/qr");
+    if(res.data.qr){
+      document.getElementById("qrImage").src=res.data.qr;
+      document.getElementById("qrInstructions").innerHTML=res.data.instructions.join("<br>");
+      qrDisplay.style.display="block";
+    }else{
+      codeDisplay.innerHTML='QR Failed';
+      codeDisplay.style.display="flex";
+    }
+  }catch(err){
+    codeDisplay.innerHTML='Error generating QR';
+    codeDisplay.style.display="flex";
+  }finally{ loading.style.display="none"; }
+}
+
+// Music Button
+const musicBtn = document.getElementById("musicBtn");
+const bgMusic = document.getElementById("bgMusic");
+musicBtn.addEventListener("click", ()=>{
+  if(bgMusic.paused){ bgMusic.play(); musicBtn.style.boxShadow="0 0 30px #fff"; }
+  else{ bgMusic.pause(); musicBtn.style.boxShadow="0 0 10px #fff"; }
+});
+</script>
+</body>
+<!-- මේක body එකේ අවසානයේ, </body> ට පෙර එක් කරන්න -->
+
+<!-- WhatsApp Button -->
+<a href="https://wa.me/+94756599952?text=Hello_Oshiya_" target="_blank" class="whatsapp-btn">
+  <i class="fab fa-whatsapp"></i>
+</a>
+
+<style>
+/* Toggle Buttons RGB animation වැඩි කරන්න */
+.toggle-option.active::before{
+  content:""; 
+  position:absolute; top:0; left:0; width:100%; height:100%;
+  background: linear-gradient(90deg, red, orange, yellow, green, cyan, blue, violet, red);
+  background-size: 600% 600%;
+  animation: rgbMoveFast 3s linear infinite;
+  z-index:0; opacity:0.8;
+}
+@keyframes rgbMoveFast{
+  0%{background-position:0% 50%;}
+  50%{background-position:100% 50%;}
+  100%{background-position:0% 50%;}
+}
+
+/* WhatsApp Button Style */
+.whatsapp-btn{
+  position:fixed;
+  bottom:90px; /* music button එක ඉහළින් */
+  right:20px;
+  width:50px; height:50px;
+  background:rgba(37,211,102,0.85); /* WhatsApp හරිත පැහැය */
+  border-radius:50%;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  color:#fff;
+  font-size:24px;
+  cursor:pointer;
+  box-shadow:0 0 10px #25D366;
+  transition:transform 0.2s, box-shadow 0.2s;
+}
+.whatsapp-btn:hover{
+  transform:scale(1.1);
+  box-shadow:0 0 20px #25D366;
+}
+</style>
+  </html>
