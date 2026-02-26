@@ -15,7 +15,6 @@ import pn from "awesome-phonenumber";
 const router = express.Router();
 const activeSessions = new Map();
 
-// පැරණි Session files ඉවත් කිරීමේ function එක
 function removeFile(path) {
     try {
         if (fs.existsSync(path)) {
@@ -28,31 +27,23 @@ function removeFile(path) {
 
 router.get("/", async (req, res) => {
     let num = req.query.number;
+    if (!num) return res.status(400).json({ error: "Phone number required" });
 
-    if (!num) {
-        return res.status(400).json({ error: "Phone number required" });
-    }
-
-    // අංකය Format කර ගැනීම
     num = num.replace(/[^0-9]/g, "");
     const phone = pn("+" + num);
-
-    if (!phone.isValid()) {
-        return res.status(400).json({ error: "Invalid phone number" });
-    }
+    if (!phone.isValid()) return res.status(400).json({ error: "Invalid phone number" });
 
     num = phone.getNumber("e164").replace("+", "");
     const sessionDir = `./sessions/${num}`;
 
-    // දැනට එම අංකයෙන් session එකක් තිබේ නම් එය නවත්වන්න
+    // පරණ session එක සම්පූර්ණයෙන්ම clear කරන්න
     if (activeSessions.has(num)) {
-        try { 
+        try {
+            activeSessions.get(num).end();
             activeSessions.get(num).ev.removeAllListeners();
-            activeSessions.get(num).end(); 
         } catch {}
         activeSessions.delete(num);
     }
-
     removeFile(sessionDir);
 
     try {
@@ -63,8 +54,8 @@ router.get("/", async (req, res) => {
             version,
             logger: pino({ level: "silent" }),
             printQRInTerminal: false,
-            // Pairing code සඳහා මෙන්න මේ browser setting එක අනිවාර්යයි
-            browser: ["Ubuntu", "Chrome", "20.0.0.0"], 
+            // 7.0.0-rc.8 වල පින් එක වැඩ කරන්න මෙන්න මේ Browser details අවශ්‍යමයි
+            browser: ["Ubuntu", "Chrome", "110.0.5481.177"], 
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
@@ -79,7 +70,7 @@ router.get("/", async (req, res) => {
             const { connection, lastDisconnect } = update;
 
             if (connection === "open") {
-                console.log("✅ Connected:", num);
+                console.log(`✅ Connected: ${num}`);
                 try {
                     await Session.findOneAndUpdate(
                         { number: num },
@@ -87,43 +78,42 @@ router.get("/", async (req, res) => {
                         { upsert: true }
                     );
                 } catch (err) {
-                    console.error("Database Save Error:", err);
+                    console.error("DB Save Error:", err);
                 }
             }
 
             if (connection === "close") {
                 const reason = lastDisconnect?.error?.output?.statusCode;
-                console.log("❌ Disconnected. Reason:", reason);
+                console.log(`❌ Disconnected: ${reason}`);
 
-                if (reason === DisconnectReason.loggedOut) {
+                // 515 ආවොත් auto restart එකක් වෙනුවට session එක delete කරලා refresh කරන්න ඉඩ දෙන්න
+                if (reason === DisconnectReason.loggedOut || reason === 515) {
                     removeFile(sessionDir);
                     activeSessions.delete(num);
-                } else {
-                    // අවශ්‍ය නම් මෙතැනදී auto-reconnect logic එකක් දැමිය හැක
                 }
             }
         });
 
-        // Pairing Code එක ඉල්ලීම
-        // මෙහිදී 3000ms (තත්පර 3ක) delay එකක් ලබා දෙන්නේ socket එක register වීමට කාලය ලබා දීමටයි
+        // මූලික ලියාපදිංචිය (Pairing Code)
         if (!sock.authState.creds.registered) {
-            await delay(3000); 
+            // 515 Error එක වළක්වන්න තත්පර 6ක delay එකක් දෙන්න
+            await delay(6000); 
+            
             try {
                 const code = await sock.requestPairingCode(num);
                 const formatted = code?.match(/.{1,4}/g)?.join("-") || code;
-                
-                // Code එක ලැබුණු පසු response එක ලබා දේ
                 return res.json({ code: formatted });
             } catch (err) {
-                console.error("Pairing Request Error:", err);
-                return res.status(500).json({ error: "Could not generate code. Please try again." });
+                console.error("Pairing Error:", err);
+                // පින් එක Generate නොවුණොත් නැවත උත්සාහ කරන්න කියන්න
+                return res.status(500).json({ error: "Failed to get code. Refresh and try again." });
             }
         } else {
-            return res.json({ message: "Already Registered" });
+            return res.json({ message: "Already Logged In" });
         }
 
     } catch (err) {
-        console.error("Internal Error:", err);
+        console.error("Server Error:", err);
         return res.status(500).json({ error: "Internal Server Error" });
     }
 });
