@@ -1,17 +1,17 @@
-const express = require('express');
-const fs = require('fs-extra');
-const path = require('path');
-const os = require('os');
-const { exec } = require('child_process');
-const router = express.Router();
-const pino = require('pino');
-const moment = require('moment-timezone');
-const axios = require('axios');
-const fetch = require('node-fetch');
-const { MongoClient } = require('mongodb');
+import express from 'express';
+import fs from 'fs-extra';
+import path from 'path';
+import os from 'os';
+import { exec } from 'child_process';
+import pino from 'pino';
+import moment from 'moment-timezone';
+import axios from 'axios';
+import fetch from 'node-fetch';
+import { MongoClient } from 'mongodb';
+import { fileURLToPath } from 'url';
 
-// Baileys library එක ESM සහ CommonJS අතර පටලැවිල්ලක් නැතිව import කිරීම
-const pkg = require('baileyz');
+// Baileys library එක ESM වලට ගැලපෙන ලෙස import කිරීම
+import pkg from 'baileyz';
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -20,6 +20,12 @@ const {
     jidNormalizedUser,
     DisconnectReason
 } = pkg;
+
+const router = express.Router();
+
+// ESM වලදී path හැසිරවීමට අවශ්‍ය setup එක
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ---------------- MONGO SETUP ----------------
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://malvintech11_db_user:0SBgxRy7WsQZ1KTq@cluster0.xqgaovj.mongodb.net/?appName=Cluster0';
@@ -68,13 +74,12 @@ async function addNumberToMongo(number) {
 
 // ---------------- EmpirePair Function ----------------
 
-async function EmpirePair(number, res) {
+export async function EmpirePair(number, res) {
     const sanitizedNumber = number.replace(/[^0-9]/g, '');
     const sessionPath = path.join(os.tmpdir(), `session_${sanitizedNumber}`);
     
     await initMongo().catch(() => {});
 
-    // MongoDB එකෙන් පරණ තොරතුරු ඇත්නම් ලබා ගැනීම
     try {
         const mongoDoc = await loadCredsFromMongo(sanitizedNumber);
         if (mongoDoc && mongoDoc.creds) {
@@ -89,8 +94,6 @@ async function EmpirePair(number, res) {
     const logger = pino({ level: 'silent' });
 
     try {
-        // 🛠️ FIX 1: Variable name 'conn' changed to 'socket' to match your handlers
-        // 🛠️ FIX 2: Added proper makeCacheableSignalKeyStore for stable pairing
         const socket = makeWASocket({
             logger,
             printQRInTerminal: false,
@@ -98,7 +101,6 @@ async function EmpirePair(number, res) {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, logger),
             },
-            // 🛠️ FIX 3: Updated version & browser for better compatibility with pairing
             version: [2, 3000, 1015901307],
             browser: ["Ubuntu", "Chrome", "20.0.0.0"],
             connectTimeoutMs: 60000,
@@ -110,18 +112,16 @@ async function EmpirePair(number, res) {
             markOnlineOnConnect: true
         });
 
-        // Global map එකකට socket එක එකතු කිරීම (Restart කිරීම් සඳහා)
-        if (typeof activeSockets !== 'undefined') activeSockets.set(sanitizedNumber, socket);
+        // Global map setup (Restart කිරීම් සඳහා)
+        // සටහන: activeSockets global variable එකක් ලෙස පවතී නම් පමණක් මෙය ක්‍රියා කරයි
+        if (typeof global.activeSockets !== 'undefined') global.activeSockets.set(sanitizedNumber, socket);
 
-        // Handlers සෙට් කිරීම (මෙහි ඇති functions ඔබේ main file එකේ තිබිය යුතුය)
-        if (typeof setupStatusHandlers === 'function') setupStatusHandlers(socket);
-        if (typeof setupCommandHandlers === 'function') setupCommandHandlers(socket, sanitizedNumber);
-        if (typeof setupMessageHandlers === 'function') setupMessageHandlers(socket);
-        if (typeof setupAutoRestart === 'function') setupAutoRestart(socket, sanitizedNumber);
+        // Handlers (මේවා ඔබගේ අනෙක් ESM modules වල තිබිය යුතුයි)
+        if (typeof global.setupStatusHandlers === 'function') global.setupStatusHandlers(socket);
+        if (typeof global.setupCommandHandlers === 'function') global.setupCommandHandlers(socket, sanitizedNumber);
+        if (typeof global.setupMessageHandlers === 'function') global.setupMessageHandlers(socket);
 
-        // 🛠️ PAIRING CODE LOGIC
         if (!socket.authState.creds.registered) {
-            // 🛠️ FIX 4: Increased delay to 8s for Railway network stability
             await delay(8000); 
             
             try {
@@ -136,7 +136,6 @@ async function EmpirePair(number, res) {
             }
         }
 
-        // Creds update logic
         socket.ev.on('creds.update', async () => {
             await saveCreds();
             try {
@@ -148,7 +147,6 @@ async function EmpirePair(number, res) {
             } catch (err) { console.error('💾 DB Save Error:', err); }
         });
 
-        // Connection update logic
         socket.ev.on('connection.update', async (update) => {
             const { connection, lastDisconnect } = update;
             
@@ -156,15 +154,12 @@ async function EmpirePair(number, res) {
                 console.log(`✅ Connected Successfully: ${sanitizedNumber}`);
                 const userJid = jidNormalizedUser(socket.user.id);
                 
-                // Welcome Message
                 await socket.sendMessage(userJid, { text: `✅ *OSHIYA-MD Connected*\n\nYour bot is now active on ${sanitizedNumber}` });
                 await addNumberToMongo(sanitizedNumber);
             }
 
             if (connection === 'close') {
                 const reason = lastDisconnect?.error?.output?.statusCode;
-                console.log(`❌ Connection Closed: ${reason}`);
-                // 515 හෝ Logout වූ විට තාවකාලික ගොනු මකා දැමීම
                 if (reason === DisconnectReason.loggedOut || reason === 515) {
                     try { fs.removeSync(sessionPath); } catch (e) {}
                 }
@@ -177,4 +172,4 @@ async function EmpirePair(number, res) {
     }
 }
 
-module.exports = { EmpirePair, router };
+export default router;
