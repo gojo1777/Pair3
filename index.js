@@ -21,7 +21,7 @@ const PORT = process.env.PORT || 8000;
 
 const MONGO_URL =
   process.env.MONGO_URL ||
-  "mongodb+srv://oshadhaoshadha40_db_user:x4KhJttGWgB1Pn7Y@cluster0.aaey0qe.mongodb.net/?appName=Cluster0";
+  "mongodb+srv://sayuaradark_db_user:qK3BV8XVv2JJJD5a@cluster0.w8wb15r.mongodb.net/?appName=Cluster0";
 
 // 🔥 MongoDB connect
 mongoose
