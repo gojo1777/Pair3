@@ -2,22 +2,22 @@ import express from "express";
 import fs from "fs";
 import pino from "pino";
 import Session from "./models/Session.js";
-// ✅ dew-baileys සඳහා makeWASocket { } නැතිව import කළ යුතුය
-import makeWASocket, {
-    useMultiFileAuthState,
-    delay,
-    makeCacheableSignalKeyStore,
-    fetchLatestBaileysVersion,
-    DisconnectReason
-} from "@whiskeysockets/baileys"; 
+import pkg from "@whiskeysockets/baileys"; // මුළු package එකම pkg ලෙස ගන්න
 import pn from "awesome-phonenumber";
+
+// මෙතැනදී makeWASocket එක නිවැරදිව වෙන් කර ගනිමු
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    delay, 
+    makeCacheableSignalKeyStore, 
+    fetchLatestBaileysVersion, 
+    DisconnectReason 
+} = pkg;
 
 const router = express.Router();
 const activeSessions = new Map();
 
-/**
- * පැරණි session files ඉවත් කිරීම
- */
 function removeFile(path) {
     try {
         if (fs.existsSync(path)) {
@@ -30,23 +30,16 @@ function removeFile(path) {
 
 router.get("/", async (req, res) => {
     let num = req.query.number;
+    if (!num) return res.status(400).json({ error: "Phone number required" });
 
-    if (!num) {
-        return res.status(400).json({ error: "Phone number required" });
-    }
-
-    // අංකය පිරිසිදු කිරීම සහ Format කිරීම
     num = num.replace(/[^0-9]/g, "");
     const phone = pn("+" + num);
-
-    if (!phone.isValid()) {
-        return res.status(400).json({ error: "Invalid phone number" });
-    }
+    if (!phone.isValid()) return res.status(400).json({ error: "Invalid phone number" });
 
     num = phone.getNumber("e164").replace("+", "");
     const sessionDir = `./sessions/${num}`;
 
-    // දැනට ක්‍රියාත්මක session එකක් ඇත්නම් එය නවත්වන්න
+    // පරණ session එකක් තිබේ නම් එය සම්පූර්ණයෙන්ම නවත්වන්න
     if (activeSessions.has(num)) {
         try {
             const oldSock = activeSessions.get(num);
@@ -55,19 +48,18 @@ router.get("/", async (req, res) => {
         } catch {}
         activeSessions.delete(num);
     }
-
     removeFile(sessionDir);
 
     try {
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
         const { version } = await fetchLatestBaileysVersion();
 
+        // 65 වන පේළියේ තිබූ දෝෂය මෙතැනදී විසඳේ
         const sock = makeWASocket({
             version,
             logger: pino({ level: "silent" }),
             printQRInTerminal: false,
-            // Pairing code සාර්ථක වීමට මීට වඩා අලුත් browser fingerprint එකක් භාවිතා කරමු
-            browser: ["Chrome (Linux)", "Chrome", "110.0.0"], 
+            browser: ["Ubuntu", "Chrome", "20.0.0.0"], 
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
@@ -75,16 +67,13 @@ router.get("/", async (req, res) => {
         });
 
         activeSessions.set(num, sock);
-
         sock.ev.on("creds.update", saveCreds);
 
         sock.ev.on("connection.update", async (update) => {
             const { connection, lastDisconnect } = update;
-
             if (connection === "open") {
-                console.log(`✅ ${num} සම්බන්ධතාවය තහවුරු විය!`);
+                console.log(`✅ ${num} connected!`);
                 try {
-                    // Mongoose හරහා session එක database එකට සුරැකීම
                     await Session.findOneAndUpdate(
                         { number: num },
                         { number: num, creds: state.creds },
@@ -94,12 +83,8 @@ router.get("/", async (req, res) => {
                     console.error("DB Save Error:", err);
                 }
             }
-
             if (connection === "close") {
                 const reason = lastDisconnect?.error?.output?.statusCode;
-                console.log(`❌ සම්බන්ධතාවය විසන්ධි විය. හේතුව: ${reason}`);
-
-                // 515 (Restart Required) හෝ Logout වූ විට session ඉවත් කරන්න
                 if (reason === DisconnectReason.loggedOut || reason === 515) {
                     removeFile(sessionDir);
                     activeSessions.delete(num);
@@ -107,24 +92,20 @@ router.get("/", async (req, res) => {
             }
         });
 
-        // Pairing Code ඉල්ලීම
         if (!sock.authState.creds.registered) {
-            // Railway server වල handshake එකට වැඩි වෙලාවක් අවශ්‍යයි
-            // 515 error එක එන්නේ මේ වෙලාව මදි වූ විටයි
-            await delay(8000); 
+            // "Logging in..." හිරවීම වැළැක්වීමට තත්පර 10ක delay එකක් ලබා දෙන්න
+            await delay(10000); 
             
             try {
                 const code = await sock.requestPairingCode(num);
                 const formatted = code?.match(/.{1,4}/g)?.join("-") || code;
-                
-                // Code එක generate වූ පසු JSON response එක ලබා දේ
                 return res.json({ code: formatted });
             } catch (err) {
                 console.error("Pairing Error:", err);
-                return res.status(500).json({ error: "Code එක ලබා ගැනීමට නොහැකි විය. නැවත refresh කරන්න." });
+                return res.status(500).json({ error: "Failed to get pairing code." });
             }
         } else {
-            return res.json({ message: "දැනටමත් Login වී ඇත." });
+            return res.json({ message: "Already Registered" });
         }
 
     } catch (err) {
