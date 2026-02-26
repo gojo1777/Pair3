@@ -2,7 +2,7 @@ import express from "express";
 import fs from "fs";
 import pino from "pino";
 import Session from "./models/Session.js";
-// ✅ mod-baileys වලදී makeWASocket { } නැතිව default import එකක් ලෙස ගත යුතුය
+// ✅ dew-baileys සඳහා makeWASocket { } නැතිව import කළ යුතුය
 import makeWASocket, {
     useMultiFileAuthState,
     delay,
@@ -15,7 +15,9 @@ import pn from "awesome-phonenumber";
 const router = express.Router();
 const activeSessions = new Map();
 
-// Session files පිරිසිදු කිරීමේ ශ්‍රිතය
+/**
+ * පැරණි session files ඉවත් කිරීම
+ */
 function removeFile(path) {
     try {
         if (fs.existsSync(path)) {
@@ -33,7 +35,7 @@ router.get("/", async (req, res) => {
         return res.status(400).json({ error: "Phone number required" });
     }
 
-    // අංකය Format කර ගැනීම
+    // අංකය පිරිසිදු කිරීම සහ Format කිරීම
     num = num.replace(/[^0-9]/g, "");
     const phone = pn("+" + num);
 
@@ -44,7 +46,7 @@ router.get("/", async (req, res) => {
     num = phone.getNumber("e164").replace("+", "");
     const sessionDir = `./sessions/${num}`;
 
-    // පරණ session එකක් ඇත්නම් එය නවත්වන්න
+    // දැනට ක්‍රියාත්මක session එකක් ඇත්නම් එය නවත්වන්න
     if (activeSessions.has(num)) {
         try {
             const oldSock = activeSessions.get(num);
@@ -64,8 +66,8 @@ router.get("/", async (req, res) => {
             version,
             logger: pino({ level: "silent" }),
             printQRInTerminal: false,
-            // Pairing code සඳහා mod-baileys නිර්දේශ කරන browser settings
-            browser: ["Ubuntu", "Chrome", "20.0.0.0"], 
+            // Pairing code සාර්ථක වීමට මීට වඩා අලුත් browser fingerprint එකක් භාවිතා කරමු
+            browser: ["Chrome (Linux)", "Chrome", "110.0.0"], 
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
@@ -80,23 +82,24 @@ router.get("/", async (req, res) => {
             const { connection, lastDisconnect } = update;
 
             if (connection === "open") {
-                console.log(`✅ ${num} සම්බන්ධතාවය සාර්ථකයි!`);
+                console.log(`✅ ${num} සම්බන්ධතාවය තහවුරු විය!`);
                 try {
+                    // Mongoose හරහා session එක database එකට සුරැකීම
                     await Session.findOneAndUpdate(
                         { number: num },
                         { number: num, creds: state.creds },
                         { upsert: true }
                     );
                 } catch (err) {
-                    console.error("Database Save Error:", err);
+                    console.error("DB Save Error:", err);
                 }
             }
 
             if (connection === "close") {
                 const reason = lastDisconnect?.error?.output?.statusCode;
-                console.log(`❌ සම්බන්ධතාවය බිඳ වැටුණි: ${reason}`);
+                console.log(`❌ සම්බන්ධතාවය විසන්ධි විය. හේතුව: ${reason}`);
 
-                // 515 error එකක් හෝ logout වීමක් සිදුවුවහොත් clear කරන්න
+                // 515 (Restart Required) හෝ Logout වූ විට session ඉවත් කරන්න
                 if (reason === DisconnectReason.loggedOut || reason === 515) {
                     removeFile(sessionDir);
                     activeSessions.delete(num);
@@ -104,27 +107,28 @@ router.get("/", async (req, res) => {
             }
         });
 
-        // Pairing Code එක ලබා ගැනීම
+        // Pairing Code ඉල්ලීම
         if (!sock.authState.creds.registered) {
-            // Railway server වලදී handshake එක සිදු වීමට තත්පර 6ක් රැඳී සිටීම අනිවාර්යයි
-            await delay(6000); 
+            // Railway server වල handshake එකට වැඩි වෙලාවක් අවශ්‍යයි
+            // 515 error එක එන්නේ මේ වෙලාව මදි වූ විටයි
+            await delay(8000); 
             
             try {
                 const code = await sock.requestPairingCode(num);
                 const formatted = code?.match(/.{1,4}/g)?.join("-") || code;
                 
-                // සාර්ථකව කේතය ලැබුණු පසු එය ලබා දේ
+                // Code එක generate වූ පසු JSON response එක ලබා දේ
                 return res.json({ code: formatted });
             } catch (err) {
-                console.error("Pairing Request Error:", err);
-                return res.status(500).json({ error: "කේතය ලබා ගැනීමට නොහැකි විය. කරුණාකර නැවත refresh කරන්න." });
+                console.error("Pairing Error:", err);
+                return res.status(500).json({ error: "Code එක ලබා ගැනීමට නොහැකි විය. නැවත refresh කරන්න." });
             }
         } else {
-            return res.json({ message: "දැනටමත් ලියාපදිංචි වී ඇත." });
+            return res.json({ message: "දැනටමත් Login වී ඇත." });
         }
 
     } catch (err) {
-        console.error("Internal Server Error:", err);
+        console.error("Main Error:", err);
         return res.status(500).json({ error: "Internal Server Error" });
     }
 });
