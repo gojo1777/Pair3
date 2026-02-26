@@ -2,14 +2,13 @@ import express from "express";
 import fs from "fs";
 import pino from "pino";
 import Session from "./models/Session.js";
-import {
-    makeWASocket,
+import makeWASocket, {
     useMultiFileAuthState,
     delay,
     makeCacheableSignalKeyStore,
     fetchLatestBaileysVersion,
     DisconnectReason
-} from "@whiskeysockets/baileys";
+} from "@whiskeysockets/baileys"; // mod-baileys හරහා import වේ
 import pn from "awesome-phonenumber";
 
 const router = express.Router();
@@ -36,10 +35,9 @@ router.get("/", async (req, res) => {
     num = phone.getNumber("e164").replace("+", "");
     const sessionDir = `./sessions/${num}`;
 
-    // පරණ session එක සම්පූර්ණයෙන්ම clear කරන්න
     if (activeSessions.has(num)) {
         try {
-            activeSessions.get(num).end();
+            activeSessions.get(num).logout();
             activeSessions.get(num).ev.removeAllListeners();
         } catch {}
         activeSessions.delete(num);
@@ -48,14 +46,13 @@ router.get("/", async (req, res) => {
 
     try {
         const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-        const { version } = await fetchLatestBaileysVersion();
-
+        
+        // mod-baileys සඳහා නිර්දේශිත settings
         const sock = makeWASocket({
-            version,
             logger: pino({ level: "silent" }),
             printQRInTerminal: false,
-            // 7.0.0-rc.8 වල පින් එක වැඩ කරන්න මෙන්න මේ Browser details අවශ්‍යමයි
-            browser: ["Ubuntu", "Chrome", "110.0.5481.177"], 
+            // mod-baileys හි pairing සඳහා වඩාත් සුදුසු browser configuration එක
+            browser: ['Ubuntu', 'Chrome', '20.00.1'], 
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
@@ -70,7 +67,7 @@ router.get("/", async (req, res) => {
             const { connection, lastDisconnect } = update;
 
             if (connection === "open") {
-                console.log(`✅ Connected: ${num}`);
+                console.log(`✅ ${num} ලොගින් විය!`);
                 try {
                     await Session.findOneAndUpdate(
                         { number: num },
@@ -78,15 +75,12 @@ router.get("/", async (req, res) => {
                         { upsert: true }
                     );
                 } catch (err) {
-                    console.error("DB Save Error:", err);
+                    console.error("DB Error:", err);
                 }
             }
 
             if (connection === "close") {
                 const reason = lastDisconnect?.error?.output?.statusCode;
-                console.log(`❌ Disconnected: ${reason}`);
-
-                // 515 ආවොත් auto restart එකක් වෙනුවට session එක delete කරලා refresh කරන්න ඉඩ දෙන්න
                 if (reason === DisconnectReason.loggedOut || reason === 515) {
                     removeFile(sessionDir);
                     activeSessions.delete(num);
@@ -94,26 +88,28 @@ router.get("/", async (req, res) => {
             }
         });
 
-        // මූලික ලියාපදිංචිය (Pairing Code)
+        // Pairing Code Logic
         if (!sock.authState.creds.registered) {
-            // 515 Error එක වළක්වන්න තත්පර 6ක delay එකක් දෙන්න
-            await delay(6000); 
+            // Socket එක stable වීමට තත්පර 5ක් ලබා දෙන්න
+            await delay(5000); 
             
             try {
+                // mod-baileys හි ඇති විශේෂත්වය: ඔබට අවශ්‍ය නම් custom code එකක් දිය හැක (උදා: "MYBOT001")
+                // දැනට default code එක ලබා ගැනීමට:
                 const code = await sock.requestPairingCode(num);
                 const formatted = code?.match(/.{1,4}/g)?.join("-") || code;
+                
                 return res.json({ code: formatted });
             } catch (err) {
                 console.error("Pairing Error:", err);
-                // පින් එක Generate නොවුණොත් නැවත උත්සාහ කරන්න කියන්න
-                return res.status(500).json({ error: "Failed to get code. Refresh and try again." });
+                return res.status(500).json({ error: "කේතය ලබා ගැනීමට අපොහොසත් විය. නැවත උත්සාහ කරන්න." });
             }
         } else {
-            return res.json({ message: "Already Logged In" });
+            return res.json({ message: "දැනටමත් ලොගින් වී ඇත." });
         }
 
     } catch (err) {
-        console.error("Server Error:", err);
+        console.error("Main Error:", err);
         return res.status(500).json({ error: "Internal Server Error" });
     }
 });
