@@ -59,7 +59,7 @@ router.get("/", async (req, res) => {
             version,
             logger: pino({ level: "silent" }),
             printQRInTerminal: false,
-            browser: ["Ubuntu", "Chrome", "20.0.0.0"], 
+            browser: ["Ubuntu", "Chrome", "20.0.04"], 
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
