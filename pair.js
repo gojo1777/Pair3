@@ -9,18 +9,20 @@ import {
     makeCacheableSignalKeyStore,
     Browsers,
     fetchLatestBaileysVersion,
+    DisconnectReason
 } from "@whiskeysockets/baileys";
 import pn from "awesome-phonenumber";
 
 const router = express.Router();
 const activeSessions = new Map();
 
-function removeFile(FilePath) {
+function removeFile(path) {
     try {
-        if (!fs.existsSync(FilePath)) return false;
-        fs.rmSync(FilePath, { recursive: true, force: true });
+        if (fs.existsSync(path)) {
+            fs.rmSync(path, { recursive: true, force: true });
+        }
     } catch (e) {
-        console.error("Error removing file:", e);
+        console.error("Remove Error:", e);
     }
 }
 
@@ -28,125 +30,95 @@ router.get("/", async (req, res) => {
     let num = req.query.number;
 
     if (!num) {
-        return res.status(400).send({ code: "Phone number is required" });
+        return res.status(400).json({ error: "Phone number required" });
     }
 
     num = num.replace(/[^0-9]/g, "");
-
     const phone = pn("+" + num);
+
     if (!phone.isValid()) {
-        return res.status(400).send({
-            code: "Invalid phone number. Use full international format",
-        });
+        return res.status(400).json({ error: "Invalid phone number" });
     }
 
     num = phone.getNumber("e164").replace("+", "");
 
+    const sessionDir = `./sessions/${num}`;
+
+    // kill old session
     if (activeSessions.has(num)) {
-        try { activeSessions.get(num).end(); } catch (_) {}
+        try { activeSessions.get(num).end(); } catch {}
         activeSessions.delete(num);
     }
 
-    const dirs = `/tmp/wa_${num}`;
-    removeFile(dirs);
-
-    const timeout = setTimeout(() => {
-        if (!res.headersSent) {
-            res.status(504).send({ code: "Pairing code request timed out" });
-        }
-        cleanup();
-    }, 60000);
-
-    function cleanup() {
-        clearTimeout(timeout);
-        removeFile(dirs);
-        if (activeSessions.has(num)) {
-            try { activeSessions.get(num).end(); } catch (_) {}
-            activeSessions.delete(num);
-        }
-    }
+    removeFile(sessionDir);
 
     try {
-        const { state, saveCreds } = await useMultiFileAuthState(dirs);
+        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
         const { version } = await fetchLatestBaileysVersion();
 
         const sock = makeWASocket({
             version,
+            logger: pino({ level: "silent" }),
+            printQRInTerminal: false,
+            browser: Browsers.macOS("Safari"), // ✅ FIXED
             auth: {
                 creds: state.creds,
-                keys: makeCacheableSignalKeyStore(
-                    state.keys,
-                    pino({ level: "fatal" })
-                ),
+                keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
             },
-            printQRInTerminal: false,
-            logger: pino({ level: "fatal" }),
-            browser: Browsers.windows("Chrome"),
         });
 
         activeSessions.set(num, sock);
+
+        sock.ev.on("creds.update", saveCreds);
 
         sock.ev.on("connection.update", async (update) => {
             const { connection, lastDisconnect } = update;
 
             if (connection === "open") {
-                console.log(`✅ Connected: ${num}`);
-                try {
-                    const credsPath = `${dirs}/creds.json`;
-                    const credsData = JSON.parse(fs.readFileSync(credsPath, "utf-8"));
+                console.log("✅ Connected:", num);
 
+                try {
                     await Session.findOneAndUpdate(
                         { number: num },
-                        { number: num, creds: credsData },
-                        { upsert: true, new: true }
+                        { number: num, creds: state.creds },
+                        { upsert: true }
                     );
-
-                    console.log(`💾 Session saved: ${num}`);
-                } catch (error) {
-                    console.error("DB Save Error:", error);
-                } finally {
-                    await delay(1000);
-                    cleanup();
+                    console.log("💾 Session Saved:", num);
+                } catch (err) {
+                    console.error("DB Save Error:", err);
                 }
             }
 
             if (connection === "close") {
-                const statusCode = lastDisconnect?.error?.output?.statusCode;
-                console.log(`🔴 Disconnected [${num}]: ${statusCode}`);
-                if (!res.headersSent) {
-                    res.status(503).send({ code: "Connection closed unexpectedly" });
+                const reason = lastDisconnect?.error?.output?.statusCode;
+
+                console.log("❌ Disconnected:", reason);
+
+                if (reason !== DisconnectReason.loggedOut) {
+                    console.log("🔁 Reconnecting...");
+                } else {
+                    removeFile(sessionDir);
                 }
-                cleanup();
+
+                activeSessions.delete(num);
             }
         });
 
-        sock.ev.on("creds.update", saveCreds);
+        // ✅ FIXED REGISTER CHECK
+        if (!state.creds.registered) {
+            await delay(5000);
 
-        if (!sock.authState.creds.registered) {
-            await delay(3000);
-            try {
-                let code = await sock.requestPairingCode(num);
-                code = code?.match(/.{1,4}/g)?.join("-") || code;
-                clearTimeout(timeout);
-                if (!res.headersSent) {
-                    res.send({ code });
-                }
-            } catch (error) {
-                console.error("Pairing code error:", error);
-                if (!res.headersSent) {
-                    res.status(503).send({ code: "Failed to get pairing code" });
-                }
-                cleanup();
-            }
+            const code = await sock.requestPairingCode(num);
+            const formatted = code?.match(/.{1,4}/g)?.join("-") || code;
+
+            return res.json({ code: formatted });
         }
+
+        return res.json({ message: "Already Registered" });
 
     } catch (err) {
         console.error("Session Error:", err);
-        clearTimeout(timeout);
-        if (!res.headersSent) {
-            res.status(503).send({ code: "Service Unavailable" });
-        }
-        cleanup();
+        return res.status(500).json({ error: "Internal Server Error" });
     }
 });
 
