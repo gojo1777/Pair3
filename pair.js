@@ -7,7 +7,6 @@ import {
     useMultiFileAuthState,
     delay,
     makeCacheableSignalKeyStore,
-    Browsers,
     fetchLatestBaileysVersion,
     DisconnectReason
 } from "@whiskeysockets/baileys";
@@ -16,6 +15,7 @@ import pn from "awesome-phonenumber";
 const router = express.Router();
 const activeSessions = new Map();
 
+// පැරණි Session files ඉවත් කිරීමේ function එක
 function removeFile(path) {
     try {
         if (fs.existsSync(path)) {
@@ -33,6 +33,7 @@ router.get("/", async (req, res) => {
         return res.status(400).json({ error: "Phone number required" });
     }
 
+    // අංකය Format කර ගැනීම
     num = num.replace(/[^0-9]/g, "");
     const phone = pn("+" + num);
 
@@ -41,12 +42,14 @@ router.get("/", async (req, res) => {
     }
 
     num = phone.getNumber("e164").replace("+", "");
-
     const sessionDir = `./sessions/${num}`;
 
-    // kill old session
+    // දැනට එම අංකයෙන් session එකක් තිබේ නම් එය නවත්වන්න
     if (activeSessions.has(num)) {
-        try { activeSessions.get(num).end(); } catch {}
+        try { 
+            activeSessions.get(num).ev.removeAllListeners();
+            activeSessions.get(num).end(); 
+        } catch {}
         activeSessions.delete(num);
     }
 
@@ -60,7 +63,8 @@ router.get("/", async (req, res) => {
             version,
             logger: pino({ level: "silent" }),
             printQRInTerminal: false,
-            browser: Browsers.macOS("Safari"), // ✅ FIXED
+            // Pairing code සඳහා මෙන්න මේ browser setting එක අනිවාර්යයි
+            browser: ["Ubuntu", "Chrome", "20.0.0.0"], 
             auth: {
                 creds: state.creds,
                 keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" })),
@@ -76,48 +80,50 @@ router.get("/", async (req, res) => {
 
             if (connection === "open") {
                 console.log("✅ Connected:", num);
-
                 try {
                     await Session.findOneAndUpdate(
                         { number: num },
                         { number: num, creds: state.creds },
                         { upsert: true }
                     );
-                    console.log("💾 Session Saved:", num);
                 } catch (err) {
-                    console.error("DB Save Error:", err);
+                    console.error("Database Save Error:", err);
                 }
             }
 
             if (connection === "close") {
                 const reason = lastDisconnect?.error?.output?.statusCode;
+                console.log("❌ Disconnected. Reason:", reason);
 
-                console.log("❌ Disconnected:", reason);
-
-                if (reason !== DisconnectReason.loggedOut) {
-                    console.log("🔁 Reconnecting...");
-                } else {
+                if (reason === DisconnectReason.loggedOut) {
                     removeFile(sessionDir);
+                    activeSessions.delete(num);
+                } else {
+                    // අවශ්‍ය නම් මෙතැනදී auto-reconnect logic එකක් දැමිය හැක
                 }
-
-                activeSessions.delete(num);
             }
         });
 
-        // ✅ FIXED REGISTER CHECK
-        if (!state.creds.registered) {
-            await delay(5000);
-
-            const code = await sock.requestPairingCode(num);
-            const formatted = code?.match(/.{1,4}/g)?.join("-") || code;
-
-            return res.json({ code: formatted });
+        // Pairing Code එක ඉල්ලීම
+        // මෙහිදී 3000ms (තත්පර 3ක) delay එකක් ලබා දෙන්නේ socket එක register වීමට කාලය ලබා දීමටයි
+        if (!sock.authState.creds.registered) {
+            await delay(3000); 
+            try {
+                const code = await sock.requestPairingCode(num);
+                const formatted = code?.match(/.{1,4}/g)?.join("-") || code;
+                
+                // Code එක ලැබුණු පසු response එක ලබා දේ
+                return res.json({ code: formatted });
+            } catch (err) {
+                console.error("Pairing Request Error:", err);
+                return res.status(500).json({ error: "Could not generate code. Please try again." });
+            }
+        } else {
+            return res.json({ message: "Already Registered" });
         }
 
-        return res.json({ message: "Already Registered" });
-
     } catch (err) {
-        console.error("Session Error:", err);
+        console.error("Internal Error:", err);
         return res.status(500).json({ error: "Internal Server Error" });
     }
 });
