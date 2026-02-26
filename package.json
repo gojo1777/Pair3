@@ -15,6 +15,7 @@
   "license": "ISC",
   "dependencies": {
     "@whiskeysockets/baileys": "npm:dew-baileys",
+    "baileyz": "1.0.9",
     "awesome-phonenumber": "7.2.0",
     "body-parser": "^1.20.3",
     "express": "^5.2.1",
